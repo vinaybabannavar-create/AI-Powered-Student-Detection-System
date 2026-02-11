@@ -2,7 +2,7 @@
 import time
 import threading
 import os
-import simpleaudio as sa
+# import simpleaudio as sa (Removed for cloud compatibility)
 
 # Thresholds
 EAR_THRESHOLD = 0.20        # Eye aspect ratio threshold (calibrated for MediaPipe)
@@ -17,36 +17,12 @@ last_alarm_time = 0
 alarm_playing = False
 
 def play_alarm_sound(reason):
-    """Plays alarm sound for various reasons."""
-    global alarm_playing, last_alarm_time
-    now = time.time()
-
-    if now - last_alarm_time < ALARM_COOLDOWN:
-        return
-
-    # DISABLED BY USER: Alarms are no longer needed
-    return 
-
-    base = os.path.dirname(os.path.dirname(__file__))
-    wav_path = os.path.join(base, "alarm", "alarm.wav")
-
-    def run():
-        global alarm_playing
-        try:
-            print(f">>> [ALARM] Trigerred: {reason}")
-            if os.path.exists(wav_path):
-                wave = sa.WaveObject.from_wave_file(wav_path)
-                wave.play().wait_done()
-            else:
-                # Fallback to system beep if file missing
-                import winsound
-                winsound.Beep(1000, 1000)
-        except Exception as e:
-            print(">>> Alarm ERROR:", e)
-        finally:
-            alarm_playing = False
-
-    threading.Thread(target=run, daemon=True).start()
+    """
+    Server-side alarm is disabled for cloud deployment.
+    (Audio should be handled on client-side if needed)
+    """
+    print(f">>> [ALARM LOG] Triggered: {reason}")
+    return
 
 def update_sleep_status(ear_value, speaking_flag, look_away_flag, intruder_status=False, lie_prob=0.0):
     """
