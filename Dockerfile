@@ -1,14 +1,15 @@
-# Use a Python base image
-FROM python:3.9-slim
+# Use a modern Python base image
+FROM python:3.11-slim
 
 # Install system dependencies for OpenCV and MediaPipe
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+# We use libgl1 and libglib2.0-0 which are standard for headless environments
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -16,7 +17,7 @@ WORKDIR /app
 # Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir simpleaudio flask-cors
+RUN pip install --no-cache-dir flask-cors
 
 # Copy the rest of the application
 COPY . .
@@ -24,5 +25,5 @@ COPY . .
 # Expose the Flask port
 EXPOSE 5000
 
-# Run the application
+# Run the application using the dynamic port
 CMD ["python", "app/server.py"]
