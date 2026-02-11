@@ -140,11 +140,14 @@ def process_image(frame):
             x, y, w, h = int(bbox.xmin * iw), int(bbox.ymin * ih), int(bbox.width * iw), int(bbox.height * ih)
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
 
-    # 2. BODY DETECTION (HOG)
-    bodies, _ = hog.detectMultiScale(frame, winStride=(4, 4), padding=(8, 8), scale=1.05)
-    num_bodies = len(bodies)
-    for (x, y, w, h) in bodies:
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+    # 2. BODY DETECTION (HOG) - with stricter filtering to reduce false positives
+    bodies, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    num_bodies = 0
+    for i, (x, y, w, h) in enumerate(bodies):
+        # Only count bodies with high confidence and reasonable size
+        if len(weights) > i and weights[i] > 0.5 and w > 50 and h > 100:
+            num_bodies += 1
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
 
     final_count = max(num_faces, num_bodies)
 
@@ -174,11 +177,14 @@ def get_video_features():
 
     # 2. BODY DETECTION (HOG) - Detects people from back/side
     # Using original frame for bodies to get more detail
-    bodies, _ = hog.detectMultiScale(frame, winStride=(4, 4), padding=(8, 8), scale=1.05)
-    num_bodies = len(bodies)
-    for (x, y, w, h) in bodies:
-        # Drawing Yellow boxes for bodies
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+    bodies, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    num_bodies = 0
+    for i, (x, y, w, h) in enumerate(bodies):
+        # Only count bodies with high confidence and reasonable size
+        if len(weights) > i and weights[i] > 0.5 and w > 50 and h > 100:
+            num_bodies += 1
+            # Drawing Yellow boxes for bodies
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
 
     # FINAL COUNT: Max of faces or bodies
     final_count = max(num_faces, num_bodies)

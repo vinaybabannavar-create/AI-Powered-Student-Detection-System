@@ -142,8 +142,13 @@
 
     function captureAndUpload() {
       if (!video.videoWidth) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+      // Draw raw video to a temporary canvas for capture
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.8);
 
       fetch('/process_frame', {
         method: 'POST',
@@ -154,6 +159,14 @@
         .then(data => {
           if (data.success) {
             studentCountDisplay.innerText = data.count;
+            // Draw the processed frame (with bounding boxes) on the visible canvas
+            if (data.frame) {
+              const img = new Image();
+              img.onload = function () {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              };
+              img.src = data.frame;
+            }
           }
         });
     }

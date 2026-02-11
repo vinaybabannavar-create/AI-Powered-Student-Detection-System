@@ -145,11 +145,19 @@ def process_frame():
         nparr = np.frombuffer(img_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # Process the frame
-        video_feat, _ = process_image(frame)
+        # Process the frame (draws bounding boxes on the frame)
+        video_feat, processed_frame = process_image(frame)
         last_count = int(video_feat[5])
 
-        return jsonify({'success': True, 'count': last_count})
+        # Encode the processed frame with bounding boxes back to base64
+        ret, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        processed_b64 = base64.b64encode(buffer).decode('utf-8')
+
+        return jsonify({
+            'success': True,
+            'count': last_count,
+            'frame': 'data:image/jpeg;base64,' + processed_b64
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
