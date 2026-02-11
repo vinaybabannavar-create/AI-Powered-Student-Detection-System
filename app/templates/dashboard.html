@@ -211,26 +211,20 @@
         try {
           let imgData;
 
-          // Check if we're on mobile or laptop
+          // Check if we're using browser camera (mobile or hosted desktop) or local MJPEG feed
           const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          const isHostedDevice = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
-          if (isMobileDevice) {
-            // MOBILE: Capture from canvas
+          if (isMobileDevice || isHostedDevice) {
+            // BROWSER CAMERA MODE: Capture the processed frame from canvas
             const videoCanvas = document.getElementById('canvas');
-            const videoElement = document.getElementById('video');
-            const ctx = videoCanvas.getContext('2d');
 
-            // Draw current video frame to canvas if video is playing
-            if (videoElement && videoElement.videoWidth > 0) {
-              ctx.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
-            }
-
-            // Small delay to ensure canvas is updated
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // Small delay to ensure canvas has the latest processed frame
+            await new Promise(resolve => setTimeout(resolve, 200));
 
             imgData = videoCanvas.toDataURL('image/jpeg', 0.9);
           } else {
-            // LAPTOP: Capture from server MJPEG feed
+            // LOCAL LAPTOP: Capture from server MJPEG feed
             const localFeedImg = document.getElementById('localFeed');
 
             // Create a temporary canvas to capture the image
