@@ -110,7 +110,17 @@ def gen_frames():
         # Get processed frame from video_module
         video_feat, frame = get_video_features()
         if frame is None:
-            continue
+            # Generate placeholder frame if camera is not working
+            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(frame, "NO CAMERA SIGNAL", (180, 240), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(frame, "Check Server Logs", (220, 280), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            video_feat = np.zeros(10)
+        
+        # Ensure video_feat is valid
+        if video_feat is None:
+             video_feat = np.zeros(10)
         
         last_count = int(video_feat[5])
 

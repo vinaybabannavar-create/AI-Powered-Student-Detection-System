@@ -16,12 +16,65 @@
       overflow: hidden;
       background: #000;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      position: relative;
+      min-height: 480px;
+      /* Prevent collapse */
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .video-box img,
-    .video-box canvas {
+    .video-box video {
       width: 100%;
+      height: 100%;
+      object-fit: cover;
       display: block;
+      z-index: 2;
+      /* Ensure video is above processing text */
+    }
+
+    .video-box canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    /* Processing indicator */
+    #processingIndicator {
+      display: none;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #0f0;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      z-index: 10;
+      animation: blink 1s infinite;
+    }
+
+    /* Loading / No Signal Message */
+    .no-signal {
+      position: absolute;
+      color: #666;
+      text-align: center;
+      z-index: 1;
+      /* Behind video */
+      width: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0.5;
+      }
     }
 
     /* Metadata overlay for capture */
@@ -58,11 +111,19 @@
 
       {% if show_video %}
       <div class="video-box">
+        <!-- Loading / No Signal Message -->
+        <div class="no-signal">
+          <div style="font-size: 2rem; margin-bottom: 10px;">📷</div>
+          <div>Waiting for camera feed...</div>
+          <div style="font-size: 0.8rem; margin-top: 5px;">(Ensure camera permissions are granted)</div>
+        </div>
+
         <!-- Local Webcam Feed for Laptop -->
         <img id="localFeed" src="{{ url_for('video_feed') }}" alt="Live Feed" style="display: none;">
-        <!-- Mobile Camera Elements -->
-        <video id="video" width="640" height="480" autoplay playsinline style="display: none;"></video>
-        <canvas id="canvas" width="640" height="480" style="width: 100%; border-radius: 10px;"></canvas>
+        <!-- Mobile Camera: video shown live, canvas overlays processed frames on top -->
+        <video id="video" width="640" height="480" autoplay playsinline muted style="display: none;"></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+        <div id="processingIndicator">⚙ Processing...</div>
       </div>
 
       <div class="status active">
@@ -93,10 +154,22 @@
       {% endif %}
 
       <div style="margin-top: 20px;">
-        <a id="sessionBtn" class="btn" href="{{ url_for('start_session') }}">
+        <a id="sessionBtn" class="btn {% if show_video %}btn-danger{% endif %}" href="{{ url_for('start_session') }}"
+          style="display: block; max-width: 100%; box-sizing: border-box;">
           {% if show_video %}Stop Session{% else %}Start Classroom Session{% endif %}
         </a>
       </div>
+      <style>
+        .btn-danger {
+          background: linear-gradient(90deg, #dc2626, #ef4444) !important;
+          box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4) !important;
+        }
+
+        .btn-danger:hover {
+          background: linear-gradient(90deg, #b91c1c, #dc2626) !important;
+          box-shadow: 0 6px 20px rgba(185, 28, 28, 0.5) !important;
+        }
+      </style>
 
       <div class="legend" style="text-align: left;">
         <div><strong>System Capabilities:</strong></div>
@@ -116,6 +189,11 @@
     const ctx = canvas.getContext('2d');
     const studentCountDisplay = document.getElementById('studentCount');
     const localFeed = document.getElementById('localFeed');
+    const processingIndicator = document.getElementById('processingIndicator');
+
+    // Track whether a request is in-flight to prevent pile-up
+    let isProcessing = false;
+    let sessionActive = true;
 
     // Check if device is mobile or if we are hosted on a remote server (like Render)
     let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -123,13 +201,34 @@
 
     if (isMobile || isHosted) {
       // Use browser camera (environment for mobile, default for desktop)
-      const constraints = isMobile ? { video: { facingMode: "environment" } } : { video: true };
+      // Reverted to simpler constraints for compatibility
+      const constraints = isMobile
+        ? { video: { facingMode: "environment" } }
+        : { video: true };
 
       navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         video.srcObject = stream;
-        setInterval(captureAndUpload, 500); // Process 2 frames per second
+        video.style.display = 'block';
+        processingIndicator.style.display = 'block';
+
+        // Wait for video to be ready, then start sequential processing
+        video.onloadedmetadata = () => {
+          // Match canvas to actual video dimensions
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          // Start the first capture; each one chains to the next
+          captureAndUpload();
+        };
       }).catch(err => {
         console.error("Camera error:", err);
+        const noSignal = document.querySelector('.no-signal');
+        if (noSignal) {
+          noSignal.innerHTML = `
+             <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
+             <div style="color: #ef4444; font-weight: bold;">Camera Access Denied</div>
+             <div style="font-size: 0.8rem; margin-top: 5px;">Check browser settings or use HTTPS</div>
+           `;
+        }
         alert("Camera access denied. Please grant permissions and ensure you are using HTTPS.");
       });
     } else {
@@ -141,14 +240,26 @@
     }
 
     function captureAndUpload() {
-      if (!video.videoWidth) return;
-      // Draw raw video to a temporary canvas for capture
+      // Don't send if previous request is still in-flight or session stopped
+      if (!sessionActive) return;
+      if (!video.videoWidth || !video.videoHeight) {
+        // Video not ready yet, retry in 500ms
+        setTimeout(captureAndUpload, 500);
+        return;
+      }
+
+      isProcessing = true;
+
+      // Use a smaller resolution for the upload to reduce payload & processing time
+      const UPLOAD_WIDTH = isMobile ? 320 : 480;
+      const UPLOAD_HEIGHT = Math.round(UPLOAD_WIDTH * (video.videoHeight / video.videoWidth));
+
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
+      tempCanvas.width = UPLOAD_WIDTH;
+      tempCanvas.height = UPLOAD_HEIGHT;
       const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.8);
+      tempCtx.drawImage(video, 0, 0, UPLOAD_WIDTH, UPLOAD_HEIGHT);
+      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
 
       fetch('/process_frame', {
         method: 'POST',
@@ -159,15 +270,25 @@
         .then(data => {
           if (data.success) {
             studentCountDisplay.innerText = data.count;
-            // Draw the processed frame (with bounding boxes) on the visible canvas
+            // Draw the processed frame (with bounding boxes) on the overlay canvas
             if (data.frame) {
               const img = new Image();
               img.onload = function () {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
               };
               img.src = data.frame;
             }
           }
+          isProcessing = false;
+          // Schedule next capture AFTER this one completes (no pile-up)
+          if (sessionActive) setTimeout(captureAndUpload, 300);
+        })
+        .catch(err => {
+          console.error("Frame processing error:", err);
+          isProcessing = false;
+          // Retry after a longer delay on error
+          if (sessionActive) setTimeout(captureAndUpload, 2000);
         });
     }
 
@@ -216,13 +337,16 @@
           const isHostedDevice = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
           if (isMobileDevice || isHostedDevice) {
-            // BROWSER CAMERA MODE: Capture the processed frame from canvas
-            const videoCanvas = document.getElementById('canvas');
-
-            // Small delay to ensure canvas has the latest processed frame
-            await new Promise(resolve => setTimeout(resolve, 200));
-
-            imgData = videoCanvas.toDataURL('image/jpeg', 0.9);
+            // BROWSER CAMERA MODE: Capture a combined frame (live video + overlay)
+            const captureCanvas = document.createElement('canvas');
+            captureCanvas.width = canvas.width;
+            captureCanvas.height = canvas.height;
+            const captureCtx = captureCanvas.getContext('2d');
+            // Draw the live video first
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            // Draw the processed overlay (bounding boxes) on top
+            captureCtx.drawImage(canvas, 0, 0, captureCanvas.width, captureCanvas.height);
+            imgData = captureCanvas.toDataURL('image/jpeg', 0.9);
           } else {
             // LOCAL LAPTOP: Capture from server MJPEG feed
             const localFeedImg = document.getElementById('localFeed');
@@ -379,10 +503,15 @@
       }
     });
 
-    // Toggle session stop
+    // Toggle session stop - also stops camera processing
     document.getElementById('sessionBtn').addEventListener('click', function (e) {
       if (this.innerText.includes("Stop")) {
         e.preventDefault();
+        sessionActive = false;
+        // Stop camera tracks to release the camera
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
+        }
         window.location.href = "{{ url_for('dashboard') }}";
       }
     });
