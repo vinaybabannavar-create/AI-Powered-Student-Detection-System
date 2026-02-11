@@ -117,22 +117,23 @@
     const studentCountDisplay = document.getElementById('studentCount');
     const localFeed = document.getElementById('localFeed');
 
-    // Check if device is mobile
+    // Check if device is mobile or if we are hosted on a remote server (like Render)
     let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    let isHosted = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
-    if (isMobile) {
-      // Mobile: Use phone's back camera (environment)
-      navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }
-      }).then(stream => {
+    if (isMobile || isHosted) {
+      // Use browser camera (environment for mobile, default for desktop)
+      const constraints = isMobile ? { video: { facingMode: "environment" } } : { video: true };
+
+      navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         video.srcObject = stream;
-        setInterval(captureAndUpload, 500); // Process 2 frames per second for smoothness
+        setInterval(captureAndUpload, 500); // Process 2 frames per second
       }).catch(err => {
         console.error("Camera error:", err);
-        alert("Mobile camera access denied. Please grant permissions.");
+        alert("Camera access denied. Please grant permissions and ensure you are using HTTPS.");
       });
     } else {
-      // Laptop: Use the server-side webcam MJPEG feed
+      // Local development on Laptop: Use the server-side webcam MJPEG feed
       canvas.style.display = 'none';
       localFeed.style.display = 'block';
       // Poll server for latest count from the global tracker

@@ -29,22 +29,38 @@ is_fullscreen = False
 window_name = "AI Lie Detector - Live Feed"
 
 def init_camera():
-    """Initialize webcam with optimized settings."""
+    """Initialize webcam with optimized settings. Handles failures gracefully for cloud/headless environments."""
     global cap
     if cap is None:
-        # Use DirectShow on Windows for faster startup and stability
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        # Create resizable window
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window_name, 800, 600)  # Standard larger start size
-        
-        time.sleep(1.5) # Increased for stability
-        print("🎥 Webcam Initialized with MediaPipe (Resizable)")
+        try:
+            # Try initializing camera (only works if physical hardware is present)
+            # Use DirectShow on Windows for stability, default elsewhere
+            if os.name == 'nt':
+                cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            else:
+                cap = cv2.VideoCapture(0)
+
+            if cap is not None and cap.isOpened():
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
+                # Window skipped for headless environments
+                if 'DISPLAY' in os.environ or os.name == 'nt':
+                    try:
+                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                        cv2.resizeWindow(window_name, 800, 600)
+                    except: pass
+                
+                time.sleep(1.0)
+                print("🎥 Webcam Initialized Successfully")
+            else:
+                print("⚠️ Warning: Physical Webcam not found. Using client-side capture only.")
+                cap = None
+        except Exception as e:
+            print(f"⚠️ Warning: Camera initialization failed ({e}). Using client-side capture only.")
+            cap = None
 
 def calculate_ear(landmarks, eye_indices):
     """Calculate Eye Aspect Ratio (EAR)."""
