@@ -1,0 +1,385 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Classroom Monitor - Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .video-box {
+      width: 100%;
+      max-width: 640px;
+      margin: 20px auto;
+      border: 4px solid #444;
+      border-radius: 15px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .video-box img,
+    .video-box canvas {
+      width: 100%;
+      display: block;
+    }
+
+    /* Metadata overlay for capture */
+    #captureMetadata {
+      display: none;
+      padding: 15px;
+      background: #f4f4f4;
+      border: 1px solid #ccc;
+      margin-top: 10px;
+      color: #333;
+      font-size: 0.8rem;
+      text-align: left;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body class="bg">
+
+  <div class="nav">
+    <div class="brand">Classroom AI Monitor</div>
+    <div class="user">
+      Logged in as {{ user }} |
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card" style="text-align: center;">
+
+      <h2>Classroom Live Dashboard</h2>
+      <p>Monitor student attendance and activity in real-time.</p>
+
+      {% if show_video %}
+      <div class="video-box">
+        <!-- Local Webcam Feed for Laptop -->
+        <img id="localFeed" src="{{ url_for('video_feed') }}" alt="Live Feed" style="display: none;">
+        <!-- Mobile Camera Elements -->
+        <video id="video" width="640" height="480" autoplay playsinline style="display: none;"></video>
+        <canvas id="canvas" width="640" height="480" style="width: 100%; border-radius: 10px;"></canvas>
+      </div>
+
+      <div class="status active">
+        <span class="dot pulse"></span> Monitor ACTIVE
+      </div>
+
+      <div class="count-display">
+        <div style="font-size: 0.9rem; color: #666; font-weight: 500;">TOTAL STUDENTS DETECTED</div>
+        <span id="studentCount">0</span>
+      </div>
+
+      <div id="captureMetadata">
+        <strong>Session Metadata:</strong><br>
+        Date: <span id="metaDate"></span><br>
+        Time: <span id="metaTime"></span><br>
+        Location: <span id="metaLoc">Fetching...</span>
+      </div>
+
+      <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <button id="captureBtn" class="btn" style="background: #2ecc71; border-color: #27ae60;">
+          📸 Capture Attendance Proof
+        </button>
+      </div>
+      {% else %}
+      <div class="status">
+        Status: Ready to Start
+      </div>
+      {% endif %}
+
+      <div style="margin-top: 20px;">
+        <a id="sessionBtn" class="btn" href="{{ url_for('start_session') }}">
+          {% if show_video %}Stop Session{% else %}Start Classroom Session{% endif %}
+        </a>
+      </div>
+
+      <div class="legend" style="text-align: left;">
+        <div><strong>System Capabilities:</strong></div>
+        <div>• Hybrid Face + Body Counting</div>
+        <div>• Works even when students turn away</div>
+        <div>• Back Camera support for mobile</div>
+        <div>• Real-time Attendance tracking</div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    {% if show_video %}
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const studentCountDisplay = document.getElementById('studentCount');
+    const localFeed = document.getElementById('localFeed');
+
+    // Check if device is mobile
+    let isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      // Mobile: Use phone's back camera (environment)
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      }).then(stream => {
+        video.srcObject = stream;
+        setInterval(captureAndUpload, 500); // Process 2 frames per second for smoothness
+      }).catch(err => {
+        console.error("Camera error:", err);
+        alert("Mobile camera access denied. Please grant permissions.");
+      });
+    } else {
+      // Laptop: Use the server-side webcam MJPEG feed
+      canvas.style.display = 'none';
+      localFeed.style.display = 'block';
+      // Poll server for latest count from the global tracker
+      setInterval(fetchCount, 500);
+    }
+
+    function captureAndUpload() {
+      if (!video.videoWidth) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+
+      fetch('/process_frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataURL })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            studentCountDisplay.innerText = data.count;
+          }
+        });
+    }
+
+    function fetchCount() {
+      fetch('/current_count')
+        .then(res => res.json())
+        .then(data => {
+          studentCountDisplay.innerText = data.count || 0;
+        });
+    }
+
+    // Capture to PDF Logic
+    document.getElementById('captureBtn').addEventListener('click', async function () {
+      const btn = this;
+      btn.innerText = "⏳ Preparing PDF...";
+      btn.disabled = true;
+
+      const metaDiv = document.getElementById('captureMetadata');
+      const now = new Date();
+      document.getElementById('metaDate').innerText = now.toLocaleDateString();
+      document.getElementById('metaTime').innerText = now.toLocaleTimeString();
+
+      // Get Location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            document.getElementById('metaLoc').innerText = `${pos.coords.latitude}, ${pos.coords.longitude}`;
+            generatePDF();
+          },
+          (err) => {
+            document.getElementById('metaLoc').innerText = "Location access denied";
+            generatePDF();
+          }
+        );
+      } else {
+        document.getElementById('metaLoc').innerText = "GPS not supported";
+        generatePDF();
+      }
+
+      async function generatePDF() {
+        try {
+          let imgData;
+
+          // Check if we're on mobile or laptop
+          const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+          if (isMobileDevice) {
+            // MOBILE: Capture from canvas
+            const videoCanvas = document.getElementById('canvas');
+            const videoElement = document.getElementById('video');
+            const ctx = videoCanvas.getContext('2d');
+
+            // Draw current video frame to canvas if video is playing
+            if (videoElement && videoElement.videoWidth > 0) {
+              ctx.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
+            }
+
+            // Small delay to ensure canvas is updated
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            imgData = videoCanvas.toDataURL('image/jpeg', 0.9);
+          } else {
+            // LAPTOP: Capture from server MJPEG feed
+            const localFeedImg = document.getElementById('localFeed');
+
+            // Create a temporary canvas to capture the image
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = localFeedImg.naturalWidth || 640;
+            tempCanvas.height = localFeedImg.naturalHeight || 480;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // Draw the server feed image to the temporary canvas
+            tempCtx.drawImage(localFeedImg, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            imgData = tempCanvas.toDataURL('image/jpeg', 0.9);
+          }
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF('p', 'mm', 'a4');
+
+          // Page dimensions
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const margin = 15;
+
+          // === OUTER BORDER ===
+          pdf.setDrawColor(0, 102, 204); // Blue border
+          pdf.setLineWidth(1);
+          pdf.rect(5, 5, pageWidth - 10, pageHeight - 10);
+
+          // === INNER BORDER ===
+          pdf.setDrawColor(100, 100, 100); // Gray inner border
+          pdf.setLineWidth(0.5);
+          pdf.rect(10, 10, pageWidth - 20, pageHeight - 20);
+
+          // === HEADER SECTION ===
+          pdf.setFillColor(0, 102, 204); // Blue header background
+          pdf.rect(margin, margin, pageWidth - 2 * margin, 25, 'F');
+
+          pdf.setTextColor(255, 255, 255); // White text
+          pdf.setFontSize(20);
+          pdf.setFont(undefined, 'bold');
+          pdf.text('CLASSROOM ATTENDANCE REPORT', pageWidth / 2, margin + 10, { align: 'center' });
+
+          pdf.setFontSize(10);
+          pdf.setFont(undefined, 'normal');
+          pdf.text('AI-Powered Student Detection System', pageWidth / 2, margin + 18, { align: 'center' });
+
+          // === METADATA SECTION ===
+          let yPos = margin + 35;
+          pdf.setTextColor(0, 0, 0);
+          pdf.setFontSize(11);
+          pdf.setFont(undefined, 'bold');
+          pdf.text('Session Information:', margin + 5, yPos);
+
+          yPos += 8;
+          pdf.setFont(undefined, 'normal');
+          pdf.setFontSize(10);
+
+          const metaDate = now.toLocaleDateString();
+          const metaTime = now.toLocaleTimeString();
+          const studentCount = document.getElementById('studentCount').innerText;
+
+          pdf.text(`Date: ${metaDate}`, margin + 5, yPos);
+          yPos += 6;
+          pdf.text(`Time: ${metaTime}`, margin + 5, yPos);
+          yPos += 6;
+          pdf.text(`Total Students Detected: ${studentCount}`, margin + 5, yPos);
+          yPos += 6;
+          pdf.text(`Logged by: {{ user }}`, margin + 5, yPos);
+
+          // Get Location
+          if (navigator.geolocation) {
+            try {
+              const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
+              });
+              yPos += 6;
+              pdf.text(`Location: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`, margin + 5, yPos);
+            } catch (err) {
+              yPos += 6;
+              pdf.text(`Location: Not available`, margin + 5, yPos);
+            }
+          } else {
+            yPos += 6;
+            pdf.text(`Location: GPS not supported`, margin + 5, yPos);
+          }
+
+          // === SEPARATOR LINE ===
+          yPos += 5;
+          pdf.setDrawColor(200, 200, 200);
+          pdf.setLineWidth(0.5);
+          pdf.line(margin + 5, yPos, pageWidth - margin - 5, yPos);
+
+          // === SNAPSHOT SECTION ===
+          yPos += 10;
+          pdf.setFontSize(11);
+          pdf.setFont(undefined, 'bold');
+          pdf.text('Live Classroom Snapshot:', margin + 5, yPos);
+
+          yPos += 5;
+
+          // Calculate dimensions to fit nicely
+          const imgProps = pdf.getImageProperties(imgData);
+          const imgWidth = pageWidth - 2 * margin - 10;
+          const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+          // Add border around image
+          pdf.setDrawColor(150, 150, 150);
+          pdf.setLineWidth(1);
+          pdf.rect(margin + 5, yPos, imgWidth, imgHeight);
+
+          pdf.addImage(imgData, 'JPEG', margin + 5, yPos, imgWidth, imgHeight);
+
+          yPos += imgHeight + 10;
+
+          // === STUDENT COUNT DISPLAY BOX ===
+          pdf.setFillColor(0, 102, 204); // Blue background
+          const boxHeight = 25;
+          pdf.rect(margin + 5, yPos, imgWidth, boxHeight, 'F');
+
+          // Add border to box
+          pdf.setDrawColor(0, 80, 160);
+          pdf.setLineWidth(1);
+          pdf.rect(margin + 5, yPos, imgWidth, boxHeight);
+
+          // Student count text
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFontSize(16);
+          pdf.setFont(undefined, 'bold');
+          const countText = `TOTAL STUDENTS DETECTED: ${studentCount}`;
+          pdf.text(countText, pageWidth / 2, yPos + 16, { align: 'center' });
+
+          // === FOOTER SECTION ===
+          const footerY = pageHeight - 15;
+          pdf.setFillColor(240, 240, 240);
+          pdf.rect(margin, footerY - 5, pageWidth - 2 * margin, 10, 'F');
+
+          pdf.setTextColor(100, 100, 100);
+          pdf.setFontSize(8);
+          pdf.setFont(undefined, 'italic');
+          pdf.text('Generated by AI Classroom Monitor System', margin + 5, footerY);
+          pdf.text(`Page 1 | ${new Date().toLocaleString()}`, pageWidth - margin - 5, footerY, { align: 'right' });
+
+          // === SAVE PDF ===
+          const fileName = `Attendance_Report_${now.toISOString().replace(/[:.]/g, '-')}.pdf`;
+          pdf.save(fileName);
+        } catch (error) {
+          console.error("PDF Error:", error);
+          alert("Failed to generate PDF. Please try again.");
+        } finally {
+          btn.innerText = "📸 Capture Attendance Proof";
+          btn.disabled = false;
+        }
+      }
+    });
+
+    // Toggle session stop
+    document.getElementById('sessionBtn').addEventListener('click', function (e) {
+      if (this.innerText.includes("Stop")) {
+        e.preventDefault();
+        window.location.href = "{{ url_for('dashboard') }}";
+      }
+    });
+    {% endif %}
+  </script>
+</body>
+
+</html>

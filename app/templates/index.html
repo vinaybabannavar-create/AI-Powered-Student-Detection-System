@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Realtime Interview AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body class="bg">
+    <div class="card center">
+      <h1>Realtime Interview Assistant</h1>
+      <p>Login to start your interview practice with AI assistance.</p>
+      <div class="row">
+        <a class="btn" href="{{ url_for('login') }}">Login</a>
+        <a class="btn outline" href="{{ url_for('signup') }}">Signup</a>
+      </div>
+    </div>
+  </body>
+</html>
