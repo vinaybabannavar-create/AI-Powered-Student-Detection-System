@@ -243,7 +243,7 @@
       isProcessing = true;
 
       // Use a smaller resolution for the upload to reduce payload & processing time
-      const UPLOAD_WIDTH = isMobile ? 320 : 480;
+      const UPLOAD_WIDTH = isMobile ? 240 : 320;
       const UPLOAD_HEIGHT = Math.round(UPLOAD_WIDTH * (video.videoHeight / video.videoWidth));
 
       const tempCanvas = document.createElement('canvas');
@@ -251,7 +251,7 @@
       tempCanvas.height = UPLOAD_HEIGHT;
       const tempCtx = tempCanvas.getContext('2d');
       tempCtx.drawImage(video, 0, 0, UPLOAD_WIDTH, UPLOAD_HEIGHT);
-      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.6);
+      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.4);
 
       fetch('/process_frame', {
         method: 'POST',
@@ -274,7 +274,8 @@
           }
           isProcessing = false;
           // Schedule next capture AFTER this one completes (no pile-up)
-          if (sessionActive) setTimeout(captureAndUpload, 300);
+          // Increased delay for Render performance (700ms)
+          if (sessionActive) setTimeout(captureAndUpload, 700);
         })
         .catch(err => {
           console.error("Frame processing error:", err);

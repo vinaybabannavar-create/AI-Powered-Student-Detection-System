@@ -144,13 +144,14 @@ def process_image(frame):
             x, y, w, h = bbox.origin_x, bbox.origin_y, bbox.width, bbox.height
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
 
-    # 2. BODY DETECTION (HOG) - with stricter filtering
-    bodies, weights = hog.detectMultiScale(frame, winStride=(8, 8), padding=(8, 8), scale=1.05)
+    # 2. BODY DETECTION (HOG) - skip on low-power environments if many faces already found
     num_bodies = 0
-    for i, (x, y, w, h) in enumerate(bodies):
-        if len(weights) > i and weights[i] > 0.5 and w > 50 and h > 100:
-            num_bodies += 1
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+    if num_faces < 1: # Only run HOG if no faces found to save CPU
+        bodies, weights = hog.detectMultiScale(frame, winStride=(16, 16), padding=(8, 8), scale=1.1)
+        for i, (x, y, w, h) in enumerate(bodies):
+            if len(weights) > i and weights[i] > 0.6 and w > 60 and h > 120:
+                num_bodies += 1
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
 
     final_count = max(num_faces, num_bodies)
 
