@@ -231,10 +231,12 @@
       setInterval(fetchCount, 500);
     }
 
-    // Persistent canvas for capturing to avoid memory pressure/stuttering
+    // Persistent canvas for capturing — created once, reused forever
     const captureCanvas = document.createElement('canvas');
     captureCanvas.width = 320;
     const captureCtx = captureCanvas.getContext('2d');
+    const UPLOAD_WIDTH = 320;
+    let UPLOAD_HEIGHT = 240;
 
     function captureAndUpload() {
       // Don't send if previous request is still in-flight or session stopped
@@ -245,56 +247,58 @@
       }
 
       isProcessing = true;
-
-      // Use a consistent 320px resolution for better AI accuracy
-      const UPLOAD_WIDTH = 320;
-      const UPLOAD_HEIGHT = Math.round(UPLOAD_WIDTH * (video.videoHeight / video.videoWidth));
-
-      // Reuse the global captureCanvas
+      UPLOAD_HEIGHT = Math.round(UPLOAD_WIDTH * (video.videoHeight / video.videoWidth));
       if (captureCanvas.height !== UPLOAD_HEIGHT) captureCanvas.height = UPLOAD_HEIGHT;
+
+      // Draw the video frame (fast, ~1-2ms)
       captureCtx.drawImage(video, 0, 0, UPLOAD_WIDTH, UPLOAD_HEIGHT);
 
-      // Higher quality (0.5) is now OK because we aren't downloading images back
-      // Using toDataURL can still be a bit blocking, but reuse helps
-      const dataURL = captureCanvas.toDataURL('image/jpeg', 0.5);
+      // *** KEY FIX: Use toBlob() which is ASYNC — never freezes the camera ***
+      captureCanvas.toBlob(function (blob) {
+        if (!blob) { isProcessing = false; scheduleNext(); return; }
 
-      fetch('/process_frame', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: dataURL })
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            studentCountDisplay.innerText = data.count;
+        const formData = new FormData();
+        formData.append('frame', blob, 'frame.jpg');
 
-            // Draw boxes locally on the transparent canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 3;
-            ctx.font = "14px Arial";
-            ctx.fillStyle = "#00ff00";
-
-            if (data.boxes && data.boxes.length > 0) {
-              const scaleX = canvas.width / UPLOAD_WIDTH;
-              const scaleY = canvas.height / UPLOAD_HEIGHT;
-
-              data.boxes.forEach(box => {
-                const [x, y, w, h] = box;
-                ctx.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
-                ctx.fillText("Student", x * scaleX, (y * scaleY) - 5);
-              });
-            }
-          }
-          isProcessing = false;
-          // Increased delay to 500ms to ensure the UI thread stays silky smooth
-          if (sessionActive) setTimeout(captureAndUpload, 500);
+        fetch('/process_frame', {
+          method: 'POST',
+          body: formData  // Binary upload — much smaller than base64
         })
-        .catch(err => {
-          console.error("Frame processing error:", err);
-          isProcessing = false;
-          if (sessionActive) setTimeout(captureAndUpload, 2000);
-        });
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              studentCountDisplay.innerText = data.count;
+
+              // Draw boxes locally on the transparent overlay canvas
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              if (data.boxes && data.boxes.length > 0) {
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 3;
+                ctx.font = "14px Arial";
+                ctx.fillStyle = "#00ff00";
+                const scaleX = canvas.width / UPLOAD_WIDTH;
+                const scaleY = canvas.height / UPLOAD_HEIGHT;
+                data.boxes.forEach(box => {
+                  const [bx, by, bw, bh] = box;
+                  ctx.strokeRect(bx * scaleX, by * scaleY, bw * scaleX, bh * scaleY);
+                  ctx.fillText("Student", bx * scaleX, (by * scaleY) - 5);
+                });
+              }
+            }
+            isProcessing = false;
+            scheduleNext();
+          })
+          .catch(err => {
+            console.error("Frame error:", err);
+            isProcessing = false;
+            if (sessionActive) setTimeout(captureAndUpload, 3000);
+          });
+      }, 'image/jpeg', 0.5);
+    }
+
+    function scheduleNext() {
+      // 1000ms between captures — gives the server AND UI plenty of breathing room
+      if (sessionActive) setTimeout(captureAndUpload, 1000);
     }
 
     function fetchCount() {

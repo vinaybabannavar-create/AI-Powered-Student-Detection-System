@@ -134,25 +134,33 @@ def video_feed():
 def process_frame():
     global last_count
     try:
-        data = request.get_json()
-        image_data = data['image'].split(",")[1]
-        img_bytes = base64.b64decode(image_data)
+        import time
+        start_t = time.time()
+
+        # Accept both FormData (binary blob, v6) and JSON (base64, legacy)
+        if 'frame' in request.files:
+            # v6: Binary blob upload (faster, no base64 overhead)
+            file = request.files['frame']
+            img_bytes = file.read()
+        else:
+            # Legacy: base64 JSON upload
+            data = request.get_json()
+            image_data = data['image'].split(",")[1]
+            img_bytes = base64.b64decode(image_data)
+
         nparr = np.frombuffer(img_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # Process the frame (returns features, frame, and face boxes)
-        import time
-        start_t = time.time()
         video_feat, _, boxes = process_image(frame)
         duration = (time.time() - start_t) * 1000
         last_count = int(video_feat[5])
-        
-        print(f"DEBUG: Processed JSON in {duration:.1f}ms | Count: {last_count} | Faces: {len(boxes)}")
+
+        print(f"DEBUG: {duration:.0f}ms | Count: {last_count} | Faces: {len(boxes)}")
 
         return jsonify({
             'success': True,
             'count': last_count,
-            'boxes': boxes # Tiny JSON data instead of big base64 images
+            'boxes': boxes
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
