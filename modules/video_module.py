@@ -15,19 +15,26 @@ FACE_LANDMARKER_MODEL = os.path.join(BASE_DIR, 'models', 'mediapipe', 'face_land
 # Face Detector
 _face_detector_options = vision.FaceDetectorOptions(
     base_options=mp_python.BaseOptions(model_asset_path=FACE_DETECTOR_MODEL),
-    min_detection_confidence=0.35
+    min_detection_confidence=0.20 # Faster & better for low-res uploads
 )
 face_detector = vision.FaceDetector.create_from_options(_face_detector_options)
 
-# Face Landmarker (replaces FaceMesh)
-_face_landmarker_options = vision.FaceLandmarkerOptions(
-    base_options=mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL),
-    num_faces=1,
-    min_face_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
-    output_face_blendshapes=False
-)
-face_landmarker = vision.FaceLandmarker.create_from_options(_face_landmarker_options)
+# Face Landmarker (replaces FaceMesh) - Global but initialized lazily
+face_landmarker = None
+
+def get_face_landmarker():
+    """Lazy initialization of FaceLandmarker to save RAM/CPU when not needed."""
+    global face_landmarker
+    if face_landmarker is None:
+        _face_landmarker_options = vision.FaceLandmarkerOptions(
+            base_options=mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_MODEL),
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+            output_face_blendshapes=False
+        )
+        face_landmarker = vision.FaceLandmarker.create_from_options(_face_landmarker_options)
+    return face_landmarker
 
 # Hybrid: OpenCV HOG People Detector
 hog = cv2.HOGDescriptor()
@@ -147,6 +154,7 @@ def process_image(frame):
     # 2. BODY DETECTION (HOG) - skip on low-power environments if many faces already found
     num_bodies = 0
     if num_faces < 1: # Only run HOG if no faces found to save CPU
+        # Slower params (winStride 16x16, scale 1.1) for better performance on Render
         bodies, weights = hog.detectMultiScale(frame, winStride=(16, 16), padding=(8, 8), scale=1.1)
         for i, (x, y, w, h) in enumerate(bodies):
             if len(weights) > i and weights[i] > 0.6 and w > 60 and h > 120:
