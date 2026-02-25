@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signup - Interview AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="bg">
+  <div class="auth-container">
+    <div class="card auth-card">
+      <h2>Create account</h2>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="msgs">
+        {% for cat, msg in messages %}
+        <div class="msg {{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+      <form method="post">
+        <input name="username" placeholder="Choose a username" required>
+        <input name="password" type="password" placeholder="Choose a password" required>
+        <button class="btn" type="submit">Sign up</button>
+      </form>
+      <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
+    </div>
+  </div>
+</body>
+
+</html>
