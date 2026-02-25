@@ -242,8 +242,8 @@
 
       isProcessing = true;
 
-      // Use a smaller resolution for the upload to reduce payload & processing time
-      const UPLOAD_WIDTH = isMobile ? 240 : 320;
+      // Use a consistent 320px resolution for better AI accuracy
+      const UPLOAD_WIDTH = 320;
       const UPLOAD_HEIGHT = Math.round(UPLOAD_WIDTH * (video.videoHeight / video.videoWidth));
 
       const tempCanvas = document.createElement('canvas');
@@ -251,7 +251,7 @@
       tempCanvas.height = UPLOAD_HEIGHT;
       const tempCtx = tempCanvas.getContext('2d');
       tempCtx.drawImage(video, 0, 0, UPLOAD_WIDTH, UPLOAD_HEIGHT);
-      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.4);
+      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.3);
 
       fetch('/process_frame', {
         method: 'POST',

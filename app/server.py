@@ -141,11 +141,16 @@ def process_frame():
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         # Process the frame (draws bounding boxes on the frame)
+        import time
+        start_t = time.time()
         video_feat, processed_frame = process_image(frame)
+        duration = (time.time() - start_t) * 1000
         last_count = int(video_feat[5])
+        
+        print(f"DEBUG: Processed frame in {duration:.1f}ms | Count: {last_count}")
 
         # Encode the processed frame with bounding boxes back to base64
-        ret, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        ret, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
         processed_b64 = base64.b64encode(buffer).decode('utf-8')
 
         return jsonify({
