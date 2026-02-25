@@ -251,7 +251,9 @@
       tempCanvas.height = UPLOAD_HEIGHT;
       const tempCtx = tempCanvas.getContext('2d');
       tempCtx.drawImage(video, 0, 0, UPLOAD_WIDTH, UPLOAD_HEIGHT);
-      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.3);
+
+      // Higher quality (0.5) is now OK because we aren't downloading images back
+      const dataURL = tempCanvas.toDataURL('image/jpeg', 0.5);
 
       fetch('/process_frame', {
         method: 'POST',
@@ -262,25 +264,33 @@
         .then(data => {
           if (data.success) {
             studentCountDisplay.innerText = data.count;
-            // Draw the processed frame (with bounding boxes) on the overlay canvas
-            if (data.frame) {
-              const img = new Image();
-              img.onload = function () {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              };
-              img.src = data.frame;
+
+            // Draw boxes locally on the transparent canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#00ff00";
+            ctx.lineWidth = 3;
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "#00ff00";
+
+            if (data.boxes && data.boxes.length > 0) {
+              // Calculate scaling factor between upload size and display size
+              const scaleX = canvas.width / UPLOAD_WIDTH;
+              const scaleY = canvas.height / UPLOAD_HEIGHT;
+
+              data.boxes.forEach(box => {
+                const [x, y, w, h] = box;
+                ctx.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
+                ctx.fillText("Student", x * scaleX, (y * scaleY) - 5);
+              });
             }
           }
           isProcessing = false;
-          // Schedule next capture AFTER this one completes (no pile-up)
-          // Increased delay for Render performance (700ms)
-          if (sessionActive) setTimeout(captureAndUpload, 700);
+          // Schedule next capture immediately for smooth UX
+          if (sessionActive) setTimeout(captureAndUpload, 100);
         })
         .catch(err => {
           console.error("Frame processing error:", err);
           isProcessing = false;
-          // Retry after a longer delay on error
           if (sessionActive) setTimeout(captureAndUpload, 2000);
         });
     }

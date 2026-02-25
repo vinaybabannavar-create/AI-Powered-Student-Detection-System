@@ -143,11 +143,13 @@ def process_image(frame):
     detect_results = face_detector.detect(mp_image)
     
     num_faces = 0
+    boxes = []
     if detect_results.detections:
         num_faces = len(detect_results.detections)
         for detection in detect_results.detections:
             bbox = detection.bounding_box
-            ih, iw, _ = frame.shape
+            boxes.append([int(bbox.origin_x), int(bbox.origin_y), int(bbox.width), int(bbox.height)])
+            # We still draw locally for server-side debugging/logs, but return the boxes too
             x, y, w, h = bbox.origin_x, bbox.origin_y, bbox.width, bbox.height
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
 
