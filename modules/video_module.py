@@ -162,7 +162,7 @@ def process_image(frame):
 
     features = np.zeros(10, float)
     features[5] = float(final_count)
-    return features, frame
+    return features, frame, boxes
 
 def get_video_features_fast():
     """Optimized streaming version - face detection + HOG body detection, no landmarks."""
